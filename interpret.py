@@ -1,7 +1,8 @@
 from openai import OpenAI
 from pydantic import BaseModel
 
-client = OpenAI(api_key="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")
+client = OpenAI(api_key="")
+
 OPENAI_MODEL = "gpt-4o-2024-08-06"
 
 body_parts = {
