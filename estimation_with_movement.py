@@ -10,7 +10,7 @@ pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 mp_drawing = mp.solutions.drawing_utils
 
 # Load the video (update with your video path)
-video_path = "your_video.mov"  # Replace with your video file path
+video_path = "IMG_4622.mov"  # Replace with your video file path
 cap = cv2.VideoCapture(video_path)
 
 if not cap.isOpened():
@@ -84,7 +84,7 @@ frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 fps = cap.get(cv2.CAP_PROP_FPS)
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-output_video_path = "processed_video_with_features.mp4"
+output_video_path = "processed_video_with_features_user.mp4"
 out = cv2.VideoWriter(output_video_path, fourcc, fps, (frame_width, frame_height))
 
 frame_idx = 0
@@ -247,10 +247,10 @@ cv2.destroyAllWindows()
 
 # Save landmark and frame feature data to CSV files
 df_landmarks = pd.DataFrame(landmark_data)
-df_landmarks.to_csv("landmarks_with_features.csv", index=False)
+df_landmarks.to_csv("landmarks_user.csv", index=False)
 
 df_features = pd.DataFrame(frame_features_data)
-df_features.to_csv("frame_features.csv", index=False)
+df_features.to_csv("frame_features_user.csv", index=False)
 
 
 # Create a ROM summary DataFrame from the rom_tracker dictionary
@@ -262,7 +262,7 @@ for feature, values in rom_tracker.items():
         "max": values["max"]
     })
 df_rom = pd.DataFrame(rom_summary)
-df_rom.to_csv("rom_summary.csv", index=False)
+df_rom.to_csv("rom_summary_user.csv", index=False)
 
 print("Landmark data saved to landmarks_with_features.csv")
 print("Frame-level features saved to frame_features.csv")
