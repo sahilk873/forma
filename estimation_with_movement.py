@@ -10,7 +10,7 @@ pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 mp_drawing = mp.solutions.drawing_utils
 
 # Load the video (update with your video path)
-video_path = "IMG_4622.mov"  # Replace with your video file path
+video_path = "videos/cablepulldown.mp4"  # Replace with your video file path
 cap = cv2.VideoCapture(video_path)
 
 if not cap.isOpened():
@@ -32,6 +32,42 @@ relevant_connections = [
     (23, 25), (24, 26),
     (25, 27), (26, 28)
 ]
+
+
+# Dictionary mapping integer keys to human-readable feature names (for reference)
+features = {
+    33: "left elbow angle",
+    34: "right elbow angle",
+    35: "left knee angle",
+    36: "right knee angle",
+    37: "elbow symmetry",
+    38: "knee symmetry",
+    39: "shoulder symmetry",
+    40: "hip symmetry",
+    41: "torso tilt",
+    42: "neck tilt",
+    43: "left ankle dorsiflexion",
+    44: "right ankle dorsiflexion",
+    45: "ankle symmetry"
+}
+
+# Create a mapping from computed feature names to the integer keys above.
+# These keys correspond to the features as computed in the script.
+feature_name_to_key = {
+    "left_elbow_angle": 33,
+    "right_elbow_angle": 34,
+    "left_knee_angle": 35,
+    "right_knee_angle": 36,
+    "elbow_symmetry": 37,
+    "knee_symmetry": 38,
+    "shoulder_symmetry": 39,
+    "hip_symmetry": 40,
+    "torso_tilt": 41,
+    "neck_tilt": 42,
+    "left_ankle_dorsiflexion": 43,
+    "right_ankle_dorsiflexion": 44,
+    "ankle_symmetry": 45
+}
 
 # Helper function: Calculate angle (in degrees) at point b given points a, b, and c
 def calculate_angle(a, b, c):
@@ -84,7 +120,7 @@ frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 fps = cap.get(cv2.CAP_PROP_FPS)
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-output_video_path = "processed_video_with_features_user.mp4"
+output_video_path = "videos/processed_video_with_features.mp4"
 out = cv2.VideoWriter(output_video_path, fourcc, fps, (frame_width, frame_height))
 
 frame_idx = 0
@@ -123,7 +159,7 @@ while cap.isOpened():
                 "z": lm.z,
                 "visibility": lm.visibility
             })
-            # Draw circles for the original keypoints (skip extra ones if desired)
+            # Draw circles for selected keypoints for visualization
             if idx in [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]:
                 cx, cy = int(lm.x * w), int(lm.y * h)
                 cv2.circle(frame, (cx, cy), 5, (0, 255, 0), -1)
@@ -187,7 +223,7 @@ while cap.isOpened():
         right_ankle_dorsiflexion = calculate_angle(right_knee, right_ankle, right_foot_index)
         ankle_symmetry = abs(left_ankle_dorsiflexion - right_ankle_dorsiflexion)
 
-        # Update frame-level features dictionary
+        # Update frame-level features dictionary with computed values
         frame_features.update({
             "left_elbow_angle": left_elbow_angle,
             "right_elbow_angle": right_elbow_angle,
@@ -245,13 +281,27 @@ cap.release()
 out.release()
 cv2.destroyAllWindows()
 
-# Save landmark and frame feature data to CSV files
+# Save landmark data to CSV
 df_landmarks = pd.DataFrame(landmark_data)
 df_landmarks.to_csv("landmarks_user.csv", index=False)
 
+# Remap frame feature column names to integer keys from our 'features' dictionary.
+# Create a copy of the DataFrame so that we can rename columns accordingly.
 df_features = pd.DataFrame(frame_features_data)
-df_features.to_csv("frame_features_user.csv", index=False)
+rename_mapping = {}
+for col in df_features.columns:
+    # We keep the 'frame' column as is.
+    if col == "frame":
+        continue
+    # For computed features, look them up in our mapping.
+    if col in feature_name_to_key:
+        # Convert the integer key to string if desired, or leave as int.
+        rename_mapping[col] = feature_name_to_key[col]
+    else:
+        rename_mapping[col] = col
 
+df_features.rename(columns=rename_mapping, inplace=True)
+df_features.to_csv("frame_features.csv", index=False)
 
 # Create a ROM summary DataFrame from the rom_tracker dictionary
 rom_summary = []
@@ -262,11 +312,11 @@ for feature, values in rom_tracker.items():
         "max": values["max"]
     })
 df_rom = pd.DataFrame(rom_summary)
-df_rom.to_csv("rom_summary_user.csv", index=False)
+df_rom.to_csv("rom_summary.csv", index=False)
 
-print("Landmark data saved to landmarks_with_features.csv")
-print("Frame-level features saved to frame_features.csv")
-print("Range of Motion summary saved to rom_summary.csv")
+print("Landmark data saved to landmarks_user.csv")
+print("Frame-level features saved to frame_features_user.csv")
+print("Range of Motion summary saved to rom_summary_user.csv")
 print("Extra Feature Descriptions:")
 for key, desc in feature_descriptions.items():
     print(f"  {key}: {desc}")
