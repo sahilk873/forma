@@ -51,8 +51,7 @@ features = {
     45: "ankle symmetry"
 }
 
-client = OpenAI(api_key="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")  # Set your API key
-
+client = OpenAI(api_key="")
 OPENAI_MODEL = "gpt-4o-mini-2024-07-18"
 
 class RelevantFeatures(BaseModel):
