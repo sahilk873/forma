@@ -9,7 +9,7 @@ client = OpenAI(api_key="sk-proj-BkcbAwQL54N9mj9Jfeph2AF_9WKlKFVAFaFppBVbaoiKNhi
 
 OPENAI_MODEL = "gpt-4o-mini-2024-07-18"
 
-
+s = "XXXXXXX"
 # Define the features dictionary
 features = {
     0: "nose",
