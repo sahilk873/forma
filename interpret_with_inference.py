@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from determine_relevant_features import determine_relevant_features
 from csv_pruning import prune
 
-client = OpenAI(api_key="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")  # Set your API key
+client = OpenAI(api_key="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")
 
 OPENAI_MODEL = "o1-mini-2024-09-12"
 
@@ -140,7 +140,8 @@ def interpret_csv(exercise_name,
                   model_rom_csv,
                   user_rom_csv,
                   feature_dict):
-    relevant_features = determine_relevant_features(exercise_name)
+    #relevant_features = determine_relevant_features(exercise_name)
+    relevant_features = [11, 12, 13, 14, 15, 16]
 
     model_landmarks_csv = prune(model_landmarks_csv, relevant_features).to_csv()
     user_landmarks_csv = prune(user_landmarks_csv, relevant_features).to_csv()

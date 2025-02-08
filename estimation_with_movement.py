@@ -10,21 +10,29 @@ pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 mp_drawing = mp.solutions.drawing_utils
 
 # Load the video (update with your video path)
-video_path = "videos/cablepulldown.mp4"  # Replace with your video file path
-cap = cv2.VideoCapture(video_path)
+VIDEO_PATH = "videos/IMG_4622.mov"
+ROM_PATH = "rom_summary_user.csv"
+LANDMARKS_PATH = "landmarks_user.csv"
+FEATURE_PATH = "frame_features_user.csv"
+
+cap = cv2.VideoCapture(VIDEO_PATH)
 
 if not cap.isOpened():
     print("Error: Could not open video.")
     exit()
 
-# Prepare lists to store per-landmark data and per-frame feature data
-landmark_data = []
+# ---------------------------------------------------------------------------------
+# Prepare a dictionary to store keypoints (x, y, z, visibility) in transposed format
+# ---------------------------------------------------------------------------------
+landmark_data = {}
+
+# Prepare a list for frame-level features
 frame_features_data = []
 
-# Include additional keypoints needed for extra features (nose, foot indices)
+# Keypoints needed for extra features (nose, foot indices, etc.)
 relevant_keypoints = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 31, 32]
 
-# Connections to draw (using the original ones for visualization)
+# Connections to draw (for visualization)
 relevant_connections = [
     (11, 13), (13, 15),
     (12, 14), (14, 16),
@@ -32,7 +40,6 @@ relevant_connections = [
     (23, 25), (24, 26),
     (25, 27), (26, 28)
 ]
-
 
 # Dictionary mapping integer keys to human-readable feature names (for reference)
 features = {
@@ -51,8 +58,7 @@ features = {
     45: "ankle symmetry"
 }
 
-# Create a mapping from computed feature names to the integer keys above.
-# These keys correspond to the features as computed in the script.
+# Mapping from computed feature names to the integer keys above
 feature_name_to_key = {
     "left_elbow_angle": 33,
     "right_elbow_angle": 34,
@@ -77,7 +83,7 @@ def calculate_angle(a, b, c):
     angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))
     return np.degrees(angle)
 
-# Dictionary to describe extra features
+# Descriptions of extra features
 feature_descriptions = {
     "left_elbow_angle": "Angle at the left elbow between the left shoulder, left elbow, and left wrist",
     "right_elbow_angle": "Angle at the right elbow between the right shoulder, right elbow, and right wrist",
@@ -85,16 +91,28 @@ feature_descriptions = {
     "right_knee_angle": "Angle at the right knee between the right hip, right knee, and right ankle",
     "elbow_symmetry": "Absolute difference between left and right elbow angles",
     "knee_symmetry": "Absolute difference between left and right knee angles",
-    "shoulder_symmetry": ("Absolute angle (in degrees) of the line connecting the left and right shoulders relative to the horizontal axis; "
-                          "a value near 0 indicates well-aligned shoulders"),
-    "hip_symmetry": ("Absolute angle (in degrees) of the line connecting the left and right hips relative to the horizontal axis; "
-                     "a value near 0 indicates well-aligned hips"),
-    "torso_tilt": ("Angle (in degrees) between the line connecting the midpoints of the shoulders and hips relative to the vertical axis; "
-                   "lower values indicate a more upright posture"),
-    "neck_tilt": ("Angle (in degrees) between the vertical axis and the line connecting the approximate neck (midpoint between shoulders) and the nose; "
-                  "indicates head tilt"),
-    "left_ankle_dorsiflexion": ("Angle at the left ankle between the left knee, left ankle, and left foot index, indicating ankle dorsiflexion"),
-    "right_ankle_dorsiflexion": ("Angle at the right ankle between the right knee, right ankle, and right foot index, indicating ankle dorsiflexion"),
+    "shoulder_symmetry": (
+        "Absolute angle (in degrees) of the line connecting the left and right shoulders relative to the horizontal axis; "
+        "a value near 0 indicates well-aligned shoulders"
+    ),
+    "hip_symmetry": (
+        "Absolute angle (in degrees) of the line connecting the left and right hips relative to the horizontal axis; "
+        "a value near 0 indicates well-aligned hips"
+    ),
+    "torso_tilt": (
+        "Angle (in degrees) between the line connecting the midpoints of the shoulders and hips relative to the vertical axis; "
+        "lower values indicate a more upright posture"
+    ),
+    "neck_tilt": (
+        "Angle (in degrees) between the vertical axis and the line connecting the approximate neck (midpoint between shoulders) and the nose; "
+        "indicates head tilt"
+    ),
+    "left_ankle_dorsiflexion": (
+        "Angle at the left ankle between the left knee, left ankle, and left foot index, indicating ankle dorsiflexion"
+    ),
+    "right_ankle_dorsiflexion": (
+        "Angle at the right ankle between the right knee, right ankle, and right foot index, indicating ankle dorsiflexion"
+    ),
     "ankle_symmetry": "Absolute difference between left and right ankle dorsiflexion angles"
 }
 
@@ -133,13 +151,52 @@ while cap.isOpened():
 
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = pose.process(rgb_frame)
-    frame_features = {"frame": frame_idx}
+    frame_features = {"frame": frame_idx}  # We'll store angles in this dict
 
     if results.pose_landmarks:
         h, w, _ = frame.shape
         landmarks = results.pose_landmarks.landmark
 
-        # Draw connections for visualization
+        # -----------------------------
+        # Normalization for scale invariance
+        # -----------------------------
+        # Compute original coordinates for shoulders and hips
+        left_shoulder_orig = (landmarks[11].x * w, landmarks[11].y * h)
+        right_shoulder_orig = (landmarks[12].x * w, landmarks[12].y * h)
+        left_hip_orig = (landmarks[23].x * w, landmarks[23].y * h)
+        right_hip_orig = (landmarks[24].x * w, landmarks[24].y * h)
+        # Define midpoints for shoulders and hips
+        mid_shoulder = ((left_shoulder_orig[0] + right_shoulder_orig[0]) / 2,
+                        (left_shoulder_orig[1] + right_shoulder_orig[1]) / 2)
+        mid_hip = ((left_hip_orig[0] + right_hip_orig[0]) / 2,
+                   (left_hip_orig[1] + right_hip_orig[1]) / 2)
+        # Torso length as the distance between mid-shoulder and mid-hip (with a small epsilon to avoid division by zero)
+        torso_length = np.linalg.norm(np.array(mid_shoulder) - np.array(mid_hip)) + 1e-6
+
+        # Helper to normalize a point so that mid_hip becomes the origin and the torso length is 1
+        def normalize_point(point):
+            return ((point[0] - mid_hip[0]) / torso_length, (point[1] - mid_hip[1]) / torso_length)
+
+        # Compute normalized coordinates for the landmarks used in feature extraction
+        norm_left_shoulder = normalize_point(left_shoulder_orig)
+        norm_right_shoulder = normalize_point(right_shoulder_orig)
+        norm_left_elbow = normalize_point((landmarks[13].x * w, landmarks[13].y * h))
+        norm_right_elbow = normalize_point((landmarks[14].x * w, landmarks[14].y * h))
+        norm_left_wrist = normalize_point((landmarks[15].x * w, landmarks[15].y * h))
+        norm_right_wrist = normalize_point((landmarks[16].x * w, landmarks[16].y * h))
+        norm_left_hip = normalize_point(left_hip_orig)
+        norm_right_hip = normalize_point(right_hip_orig)
+        norm_left_knee = normalize_point((landmarks[25].x * w, landmarks[25].y * h))
+        norm_right_knee = normalize_point((landmarks[26].x * w, landmarks[26].y * h))
+        norm_left_ankle = normalize_point((landmarks[27].x * w, landmarks[27].y * h))
+        norm_right_ankle = normalize_point((landmarks[28].x * w, landmarks[28].y * h))
+        norm_left_foot_index = normalize_point((landmarks[31].x * w, landmarks[31].y * h))
+        norm_right_foot_index = normalize_point((landmarks[32].x * w, landmarks[32].y * h))
+        norm_nose = normalize_point((landmarks[0].x * w, landmarks[0].y * h))
+
+        # -----------------------------
+        # Draw connections for visualization (using original coordinates)
+        # -----------------------------
         for connection in relevant_connections:
             start_idx, end_idx = connection
             start_lm = landmarks[start_idx]
@@ -148,82 +205,69 @@ while cap.isOpened():
             end_coords = (int(end_lm.x * w), int(end_lm.y * h))
             cv2.line(frame, start_coords, end_coords, (0, 255, 255), 2)
 
-        # Save landmark data (for keypoints we care about)
-        for idx in relevant_keypoints:
-            lm = landmarks[idx]
-            landmark_data.append({
-                "frame": frame_idx,
-                "landmark_id": idx,
-                "x": lm.x,
-                "y": lm.y,
-                "z": lm.z,
-                "visibility": lm.visibility
-            })
-            # Draw circles for selected keypoints for visualization
-            if idx in [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]:
+        # Save landmark data in the dictionary for transposing later (using original coordinates)
+        for idx_key in relevant_keypoints:
+            lm = landmarks[idx_key]
+            if (idx_key, "x") not in landmark_data:
+                landmark_data[(idx_key, "x")] = []
+                landmark_data[(idx_key, "y")] = []
+                landmark_data[(idx_key, "z")] = []
+                landmark_data[(idx_key, "visibility")] = []
+            landmark_data[(idx_key, "x")].append(lm.x)
+            landmark_data[(idx_key, "y")].append(lm.y)
+            landmark_data[(idx_key, "z")].append(lm.z)
+            landmark_data[(idx_key, "visibility")].append(lm.visibility)
+            # Draw circles on selected keypoints
+            if idx_key in [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]:
                 cx, cy = int(lm.x * w), int(lm.y * h)
                 cv2.circle(frame, (cx, cy), 5, (0, 255, 0), -1)
 
-        # --- Compute standard joint angles ---
+        # -----------------------------
+        # Compute features using normalized coordinates
+        # -----------------------------
+
         # Elbow angles
-        left_shoulder = (landmarks[11].x * w, landmarks[11].y * h)
-        right_shoulder = (landmarks[12].x * w, landmarks[12].y * h)
-        left_elbow = (landmarks[13].x * w, landmarks[13].y * h)
-        right_elbow = (landmarks[14].x * w, landmarks[14].y * h)
-        left_wrist = (landmarks[15].x * w, landmarks[15].y * h)
-        right_wrist = (landmarks[16].x * w, landmarks[16].y * h)
-        left_elbow_angle = calculate_angle(left_shoulder, left_elbow, left_wrist)
-        right_elbow_angle = calculate_angle(right_shoulder, right_elbow, right_wrist)
+        left_elbow_angle = calculate_angle(norm_left_shoulder, norm_left_elbow, norm_left_wrist)
+        right_elbow_angle = calculate_angle(norm_right_shoulder, norm_right_elbow, norm_right_wrist)
 
         # Knee angles
-        left_hip = (landmarks[23].x * w, landmarks[23].y * h)
-        right_hip = (landmarks[24].x * w, landmarks[24].y * h)
-        left_knee = (landmarks[25].x * w, landmarks[25].y * h)
-        right_knee = (landmarks[26].x * w, landmarks[26].y * h)
-        left_ankle = (landmarks[27].x * w, landmarks[27].y * h)
-        right_ankle = (landmarks[28].x * w, landmarks[28].y * h)
-        left_knee_angle = calculate_angle(left_hip, left_knee, left_ankle)
-        right_knee_angle = calculate_angle(right_hip, right_knee, right_ankle)
+        left_knee_angle = calculate_angle(norm_left_hip, norm_left_knee, norm_left_ankle)
+        right_knee_angle = calculate_angle(norm_right_hip, norm_right_knee, norm_right_ankle)
 
-        # --- Compute symmetry measures ---
+        # Symmetry measures
         elbow_symmetry = abs(left_elbow_angle - right_elbow_angle)
         knee_symmetry = abs(left_knee_angle - right_knee_angle)
-        # Shoulder symmetry: angle of the line joining the shoulders relative to horizontal
-        dx_shoulder = right_shoulder[0] - left_shoulder[0]
-        dy_shoulder = right_shoulder[1] - left_shoulder[1]
+
+        # Shoulder symmetry (using normalized shoulders)
+        dx_shoulder = norm_right_shoulder[0] - norm_left_shoulder[0]
+        dy_shoulder = norm_right_shoulder[1] - norm_left_shoulder[1]
         shoulder_angle = np.degrees(np.arctan2(dy_shoulder, dx_shoulder))
-        shoulder_symmetry = abs(shoulder_angle)  # ideally near 0
-        # Hip symmetry: angle of the line joining the hips relative to horizontal
-        dx_hip = right_hip[0] - left_hip[0]
-        dy_hip = right_hip[1] - left_hip[1]
+        shoulder_symmetry = abs(shoulder_angle)
+
+        # Hip symmetry (using normalized hips)
+        dx_hip = norm_right_hip[0] - norm_left_hip[0]
+        dy_hip = norm_right_hip[1] - norm_left_hip[1]
         hip_angle = np.degrees(np.arctan2(dy_hip, dx_hip))
         hip_symmetry = abs(hip_angle)
 
-        # Torso tilt: angle between the line joining mid-shoulders and mid-hips relative to vertical
-        mid_shoulder = ((left_shoulder[0] + right_shoulder[0]) / 2, (left_shoulder[1] + right_shoulder[1]) / 2)
-        mid_hip = ((left_hip[0] + right_hip[0]) / 2, (left_hip[1] + right_hip[1]) / 2)
-        dx_mid = mid_hip[0] - mid_shoulder[0]
-        dy_mid = mid_hip[1] - mid_shoulder[1]
-        torso_tilt = abs(np.degrees(np.arctan2(dx_mid, dy_mid)))  # 0 indicates perfectly vertical
+        # Torso tilt: compute normalized mid-shoulder relative to the origin (mid_hip becomes [0,0])
+        norm_mid_shoulder = ((norm_left_shoulder[0] + norm_right_shoulder[0]) / 2,
+                             (norm_left_shoulder[1] + norm_right_shoulder[1]) / 2)
+        torso_tilt = abs(np.degrees(np.arctan2(norm_mid_shoulder[0], norm_mid_shoulder[1])))
 
-        # --- Additional features ---
-        # Neck tilt: angle between vertical and the line connecting the approximate neck (midpoint of shoulders) and the nose (landmark 0)
-        nose = (landmarks[0].x * w, landmarks[0].y * h)
-        neck = ((left_shoulder[0] + right_shoulder[0]) / 2, (left_shoulder[1] + right_shoulder[1]) / 2)
-        dx_neck = nose[0] - neck[0]
-        dy_neck = nose[1] - neck[1]
+        # Neck tilt: use the midpoint of normalized shoulders as an approximation for the neck position
+        norm_neck = norm_mid_shoulder
+        dx_neck = norm_nose[0] - norm_neck[0]
+        dy_neck = norm_nose[1] - norm_neck[1]
         neck_line_angle = np.degrees(np.arctan2(dx_neck, dy_neck))
-        neck_tilt = abs(neck_line_angle)  # deviation from vertical
+        neck_tilt = abs(neck_line_angle)
 
-        # Ankle dorsiflexion: using left knee, left ankle, and left foot index (landmark 31)
-        left_foot_index = (landmarks[31].x * w, landmarks[31].y * h)
-        left_ankle_dorsiflexion = calculate_angle(left_knee, left_ankle, left_foot_index)
-        # Right ankle dorsiflexion: using right knee, right ankle, and right foot index (landmark 32)
-        right_foot_index = (landmarks[32].x * w, landmarks[32].y * h)
-        right_ankle_dorsiflexion = calculate_angle(right_knee, right_ankle, right_foot_index)
+        # Ankle dorsiflexion
+        left_ankle_dorsiflexion = calculate_angle(norm_left_knee, norm_left_ankle, norm_left_foot_index)
+        right_ankle_dorsiflexion = calculate_angle(norm_right_knee, norm_right_ankle, norm_right_foot_index)
         ankle_symmetry = abs(left_ankle_dorsiflexion - right_ankle_dorsiflexion)
 
-        # Update frame-level features dictionary with computed values
+        # Store computed (normalized) features in frame_features
         frame_features.update({
             "left_elbow_angle": left_elbow_angle,
             "right_elbow_angle": right_elbow_angle,
@@ -240,7 +284,7 @@ while cap.isOpened():
             "ankle_symmetry": ankle_symmetry
         })
 
-        # Update ROM tracker for selected angle features
+        # Update ROM tracker
         update_rom("left_elbow_angle", left_elbow_angle)
         update_rom("right_elbow_angle", right_elbow_angle)
         update_rom("left_knee_angle", left_knee_angle)
@@ -250,30 +294,39 @@ while cap.isOpened():
         update_rom("neck_tilt", neck_tilt)
         update_rom("torso_tilt", torso_tilt)
 
-        # Optionally, draw text on frame for visualization
-        cv2.putText(frame, f"LElbow: {int(left_elbow_angle)}", (int(left_elbow[0]), int(left_elbow[1]-10)),
+        # Optionally draw text overlays (angles are computed on normalized coordinates, but since angles are invariant under translation/scaling, the displayed values are comparable)
+        cv2.putText(frame, f"LElbow: {int(left_elbow_angle)}",
+                    (int(landmarks[13].x * w), int(landmarks[13].y * h) - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-        cv2.putText(frame, f"RElbow: {int(right_elbow_angle)}", (int(right_elbow[0]), int(right_elbow[1]-10)),
+        cv2.putText(frame, f"RElbow: {int(right_elbow_angle)}",
+                    (int(landmarks[14].x * w), int(landmarks[14].y * h) - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-        cv2.putText(frame, f"LKnee: {int(left_knee_angle)}", (int(left_knee[0]), int(left_knee[1]-10)),
+        cv2.putText(frame, f"LKnee: {int(left_knee_angle)}",
+                    (int(landmarks[25].x * w), int(landmarks[25].y * h) - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-        cv2.putText(frame, f"RKnee: {int(right_knee_angle)}", (int(right_knee[0]), int(right_knee[1]-10)),
+        cv2.putText(frame, f"RKnee: {int(right_knee_angle)}",
+                    (int(landmarks[26].x * w), int(landmarks[26].y * h) - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-        cv2.putText(frame, f"NeckTilt: {int(neck_tilt)}", (10, 30),
+        cv2.putText(frame, f"NeckTilt: {int(neck_tilt)}",
+                    (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-        cv2.putText(frame, f"TorsoTilt: {int(torso_tilt)}", (10, 50),
+        cv2.putText(frame, f"TorsoTilt: {int(torso_tilt)}",
+                    (10, 50),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-        cv2.putText(frame, f"LAnkleDF: {int(left_ankle_dorsiflexion)}", (10, 70),
+        cv2.putText(frame, f"LAnkleDF: {int(left_ankle_dorsiflexion)}",
+                    (10, 70),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 128, 255), 2)
-        cv2.putText(frame, f"RAnkleDF: {int(right_ankle_dorsiflexion)}", (10, 90),
+        cv2.putText(frame, f"RAnkleDF: {int(right_ankle_dorsiflexion)}",
+                    (10, 90),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 128, 255), 2)
 
-    # Write processed frame and display
+    # Write processed frame to output and show
     out.write(frame)
     cv2.imshow("Pose Estimation with Features", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
+    # Save angle features for this frame
     frame_features_data.append(frame_features)
     frame_idx += 1
 
@@ -281,29 +334,54 @@ cap.release()
 out.release()
 cv2.destroyAllWindows()
 
-# Save landmark data to CSV
-df_landmarks = pd.DataFrame(landmark_data)
-df_landmarks.to_csv("landmarks_user.csv", index=False)
+# -----------------------------------------------------------------------------------------
+# TRANSPOSE LANDMARK DATA: frames become columns, (landmark_id, coordinate) becomes rows
+# -----------------------------------------------------------------------------------------
+df_landmarks = pd.DataFrame.from_dict(
+    landmark_data,
+    orient="index",
+    columns=[f"frame_{i}" for i in range(frame_idx)]
+)
+# Reset index so we have (landmark_id, coordinate) in columns
+df_landmarks.reset_index(inplace=True)
+df_landmarks.rename(columns={"level_0": "landmark_id", "level_1": "coordinate"}, inplace=True)
 
-# Remap frame feature column names to integer keys from our 'features' dictionary.
-# Create a copy of the DataFrame so that we can rename columns accordingly.
+df_landmarks.to_csv(LANDMARKS_PATH, index=False)
+
+# -----------------------------------------------------------------------------------------
+# FRAME FEATURES: we also transpose so each feature is a row, and frames become columns
+# -----------------------------------------------------------------------------------------
 df_features = pd.DataFrame(frame_features_data)
+
+# First, rename columns to use the numeric keys (where applicable)
 rename_mapping = {}
 for col in df_features.columns:
-    # We keep the 'frame' column as is.
     if col == "frame":
         continue
-    # For computed features, look them up in our mapping.
     if col in feature_name_to_key:
-        # Convert the integer key to string if desired, or leave as int.
         rename_mapping[col] = feature_name_to_key[col]
     else:
         rename_mapping[col] = col
 
 df_features.rename(columns=rename_mapping, inplace=True)
-df_features.to_csv("frame_features.csv", index=False)
 
-# Create a ROM summary DataFrame from the rom_tracker dictionary
+# Now we set 'frame' as the index so we can transpose
+df_features.set_index("frame", inplace=True)
+df_features = df_features.transpose().reset_index()  # Each feature becomes a row
+
+# Rename the index column to 'feature'
+df_features.rename(columns={"index": "feature"}, inplace=True)
+
+# Columns are currently [feature, 0, 1, 2, ...]. Rename them to frame_0, frame_1, ...
+old_frame_cols = df_features.columns[1:]
+new_frame_cols = [f"frame_{int(col)}" for col in old_frame_cols]
+df_features.columns = ["feature"] + new_frame_cols
+
+df_features.to_csv(FEATURE_PATH, index=False)
+
+# -----------------------------------------------------------------------------------------
+# ROM SUMMARY
+# -----------------------------------------------------------------------------------------
 rom_summary = []
 for feature, values in rom_tracker.items():
     rom_summary.append({
@@ -311,12 +389,13 @@ for feature, values in rom_tracker.items():
         "min": values["min"],
         "max": values["max"]
     })
-df_rom = pd.DataFrame(rom_summary)
-df_rom.to_csv("rom_summary.csv", index=False)
 
-print("Landmark data saved to landmarks_user.csv")
-print("Frame-level features saved to frame_features_user.csv")
+df_rom = pd.DataFrame(rom_summary)
+df_rom.to_csv(ROM_PATH, index=False)
+
+print("Landmark data (transposed) saved to landmarks_user.csv")
+print("Frame-level features (transposed) saved to frame_features_user.csv")
 print("Range of Motion summary saved to rom_summary_user.csv")
 print("Extra Feature Descriptions:")
 for key, desc in feature_descriptions.items():
-    print(f"  {key}: {desc}")
+    print(f"{key}: {desc}")

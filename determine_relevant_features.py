@@ -51,7 +51,8 @@ features = {
     45: "ankle symmetry"
 }
 
-client = OpenAI(api_key="")
+client = OpenAI(api_key="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")
+
 OPENAI_MODEL = "gpt-4o-mini-2024-07-18"
 
 class RelevantFeatures(BaseModel):
@@ -65,13 +66,12 @@ def determine_relevant_features(exercise_name: str) -> List[int]:
         "role": "system",
         "content": ("You are an AI that selects relevant body part features for a given exercise. "
                     "You will receive a dictionary where the keys are numbers representing body parts and motion features, "
-                    "and the values are the corresponding names. Your task is to return a list of the numerical keys "
-                    "that are relevant for the provided exercise.")
+                    "and the values are the corresponding names. Your task is to return a list of the numerical keys that are relevant for the provided exercise. Return atleast two motion features each time which dictionary numbers 33-45 related to the exercise alongside every body parts that is relevant.")
     })
     messages.append({
         "role": "user",
         "content": f"Here is the dictionary of features:\n{features}\n\nGiven the exercise '{exercise_name}', "
-                   "return a list of the feature keys (numbers) that are relevant."
+                   "return a list of the feature keys (numbers) that are relevant. For exercises that use the arms, make sure to return keys relating to the shoulder, wrist, and elbow."
     })
 
     response = client.beta.chat.completions.parse(
