@@ -2,6 +2,18 @@ from openai import OpenAI
 from pydantic import BaseModel
 from typing import List, Dict
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+ 
+api_key = os.getenv("OPENAI_KEY")
+
+
+client = OpenAI(api_key=api_key)
+
+OPENAI_MODEL = "gpt-4o-mini-2024-07-18"
+
 features = {
     0: "nose",
     1: "left eye (inner)",
@@ -51,13 +63,9 @@ features = {
     45: "ankle symmetry"
 }
 
-client = OpenAI(api_key="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")
-
-OPENAI_MODEL = "gpt-4o-mini-2024-07-18"
 
 class RelevantFeatures(BaseModel):
     features_list: List[int]
-
 
 
 def determine_relevant_features(exercise_name: str) -> List[int]:

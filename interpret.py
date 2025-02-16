@@ -1,16 +1,21 @@
 from openai import OpenAI
 from pydantic import BaseModel
 import pandas as pd
+import os
+import sys
+from dotenv import load_dotenv
 
+# Import the process_video function from your existing module.
+from estimation_with_movement import process_video
 from determine_relevant_features import determine_relevant_features
 from csv_pruning import prune
 
-client = OpenAI(api_key="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")
+load_dotenv()
 
 OPENAI_MODEL = "gpt-4o-mini-2024-07-18"
+api_key = os.getenv("OPENAI_KEY")
+client = OpenAI(api_key=api_key)
 
-s = "XXXXXXX"
-# Define the features dictionary
 features = {
     0: "nose",
     1: "left eye (inner)",
@@ -53,14 +58,14 @@ features = {
     38: "knee symmetry",
     39: "shoulder symmetry",
     40: "hip symmetry",
-    41: "torso tilt",  # Ensure this only appears once
+    41: "torso tilt",
     42: "neck tilt",
     43: "left ankle dorsiflexion",
     44: "right ankle dorsiflexion",
     45: "ankle symmetry"
 }
 
-# Update the output model to include frame-level analysis as well as overall summary
+# Output model for analysis
 class FormOutput(BaseModel):
     frame_analysis: str
     overall_issue: str
@@ -85,7 +90,7 @@ def interpret_csv(exercise_name, model_landmarks_csv, user_landmarks_csv,
     model_features_data = model_features_pruned.to_csv(index=False)
     user_features_data = user_features_pruned.to_csv(index=False)
     
-    # Construct a system prompt that instructs a frame-by-frame analysis
+    # Construct a system prompt for frame-by-frame analysis
     system_prompt = (
         "You are a highly experienced exercise biomechanics analyst. Your task is to analyze detailed movement data from CSV files "
         "for exercises on a frame-by-frame basis. The CSV data includes landmark positions, computed joint angles, and symmetry measures for each frame. "
@@ -93,7 +98,7 @@ def interpret_csv(exercise_name, model_landmarks_csv, user_landmarks_csv,
         "Identify any discrepancies in joint angles and symmetry—such as if one arm is moving correctly while the other is not. "
         "Also incorporate range-of-motion (ROM) information if provided. "
         "Then, summarize the overall issues and provide actionable advice. "
-        "Avoid duplicate references to any body part (for example, do not mention 'torso' twice)."
+        "Give output that talks a user directly, and is in a friendly tone. "
     )
     
     messages = [
@@ -116,21 +121,40 @@ def interpret_csv(exercise_name, model_landmarks_csv, user_landmarks_csv,
     )
     
     return {
-        "frame_analysis": response.choices[0].message.parsed.frame_analysis,
-        "overall_issue": response.choices[0].message.parsed.overall_issue,
-        "overall_advice": response.choices[0].message.parsed.overall_advice
+        #"frame_analysis": response.choices[0].message.parsed.frame_analysis,
+        "issue": response.choices[0].message.parsed.overall_issue,
+        "advice": response.choices[0].message.parsed.overall_advice
     }
 
-# Note: The exercise name is now set to "Lat pull down" to match your video.
-response = interpret_csv(
-    "Lat pull down",                    # Corrected exercise name
-    "landmarks.csv",                      # Model landmark CSV
-    "landmarks_user.csv",                 # User landmark CSV
-    "frame_features.csv",                 # Model extra features CSV
-    "frame_features_user.csv",            # User extra features CSV
-    "rom_summary.csv",                    # Model ROM summary CSV
-    "rom_summary_user.csv",               # User ROM summary CSV
-    features
-)
-
-print(response)
+def run_exercise_analysis(video_input_file: str):
+    """
+    Process the input video to extract pose data and then analyze the user's performance against the model.
+    """
+    # Define file paths for the output CSV files and processed video
+    user_landmarks_csv = "landmarks_user.csv"
+    user_features_csv = "frame_features_user.csv"
+    user_rom_csv = "rom_summary_user.csv"
+    output_video_path = "videos/processed_video_with_features.mp4"
+    
+    # Process the input video using process_video from estimation_with_movement.py.
+    process_video(
+        video_path=video_input_file,
+        output_video_path=output_video_path,
+        rom_csv_path=user_rom_csv,
+        landmarks_csv_path=user_landmarks_csv,
+        features_csv_path=user_features_csv
+    )
+    
+    # Call interpret_csv using the model CSVs and the newly generated user CSVs.
+    analysis_response = interpret_csv(
+        "Lat pull down",          # Exercise name
+        "landmarks.csv",          # Model landmark CSV
+        user_landmarks_csv,       # User landmark CSV
+        "frame_features.csv",     # Model frame features CSV
+        user_features_csv,        # User frame features CSV
+        "rom_summary.csv",        # Model ROM summary CSV
+        user_rom_csv,             # User ROM summary CSV
+        features
+    )
+    
+    return analysis_response

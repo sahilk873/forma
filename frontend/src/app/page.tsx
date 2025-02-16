@@ -24,35 +24,45 @@ export default function Home() {
   };
 
   const handleAnalyze = async () => {
+    console.log('[page.tsx] Analyze button clicked');
+    console.log('[page.tsx] selectedFile:', selectedFile);
+    console.log('[page.tsx] selectedExercise:', selectedExercise);
+    console.log('[page.tsx] requiresMirroring:', requiresMirroring);
+    
     if (selectedFile) {
       setIsAnalyzing(true);
       const formData = new FormData();
       formData.append('video', selectedFile);
       formData.append('requiresMirroring', requiresMirroring.toString());
       formData.append('exercise', selectedExercise);
-
+  
       try {
         const response = await fetch('/api/analyze', {
           method: 'POST',
           body: formData,
         });
-
+  
         if (!response.ok) {
           throw new Error('Analysis failed');
         }
-
+  
         const result = await response.json();
+        console.log('[page.tsx] Backend response:', result);
+  
         if (result.success) {
           setAnalysisResult(result.data);
         } else {
+          console.error('[page.tsx] Backend error:', result.error);
           throw new Error(result.error || 'Analysis failed');
         }
       } catch (error) {
-        console.error('Error analyzing video:', error);
+        console.error('[page.tsx] Error analyzing video:', error);
         alert('Failed to analyze video. Please try again.');
       } finally {
         setIsAnalyzing(false);
       }
+    } else {
+      console.warn('[page.tsx] Analyze button clicked without selectedFile');
     }
   };
 
@@ -102,7 +112,8 @@ export default function Home() {
             <h2 className="text-xl mb-4">Record or Upload Your Exercise Video</h2>
             
             {/* Video Recording Option */}
-            <VideoRecorder />
+            
+            <VideoRecorder onVideoSelect={(blob) => setSelectedFile(new File([blob], "recorded-video.mp4", { type: blob.type, lastModified: Date.now() }))} />
 
             {/* Video Upload Option */}
             <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
@@ -139,7 +150,7 @@ export default function Home() {
           {/* Analysis Button */}
           <button
             onClick={handleAnalyze}
-            disabled={!selectedFile || !selectedExercise || isAnalyzing}
+            //disabled={!selectedFile || !selectedExercise || isAnalyzing}
             className="w-full rounded-full bg-foreground text-background py-3 px-6 
               hover:bg-[#383838] dark:hover:bg-[#ccc] transition-colors
               disabled:opacity-50 disabled:cursor-not-allowed"

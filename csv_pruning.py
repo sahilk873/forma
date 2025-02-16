@@ -11,14 +11,14 @@ def prune(file, columns):
     # Read the CSV file
     df = pd.read_csv(file)
     
-    columns =[i for i in range(0, 46) if i not in columns]
+    columns = [i for i in range(0, 46) if i not in columns]
 
     # Compile a regex pattern to extract numbers from the first element
     pattern = re.compile(r"\d+")
     
     # Function to check if the first element contains a number in the columns array
     def should_delete(row):
-        match = pattern.search(str(row[0]))
+        match = pattern.search(str(row.iloc[0]))  # Use .iloc for position-based indexing
         return match and int(match.group()) in columns
     
     # Filter rows based on the condition

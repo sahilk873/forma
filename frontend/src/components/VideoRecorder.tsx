@@ -88,11 +88,19 @@ export default function VideoRecorder({ onVideoSelect, selectedExercise }: Video
 
   const selectVideo = useCallback(async () => {
     if (videoBlob) {
+      console.log('[VideoRecorder] Use This Video clicked');
+      console.log('[VideoRecorder] Video Blob:', videoBlob);
+      
       if (onVideoSelect) {
-        onVideoSelect(videoBlob);  // Send the video blob to the parent component
+        const file = new File([videoBlob], "recorded_video.mp4", { type: "video/mp4" });
+        console.log('[VideoRecorder] Passing video to parent as File:', file);
+        onVideoSelect(file);  // Pass the recorded video to parent
       }
+    } else {
+      console.warn('[VideoRecorder] No video blob found when Use This Video clicked');
     }
   }, [videoBlob, onVideoSelect]);
+  
 
   return (
     <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
